@@ -6,7 +6,7 @@ const Activity = require("../models/Activity");
 class DashboardRepository {
   async getUserGroups(userId) {
     return Group.find({
-      members: userId,
+      "members.user": userId,
     })
       .select("name currency members createdAt")
       .sort({ createdAt: -1 });
@@ -18,13 +18,13 @@ class DashboardRepository {
     })
       .populate("group", "name")
       .populate("paidBy", "name email")
-      .sort({ createdAt: -1})
+      .sort({ createdAt: -1 })
       .limit(limit);
   }
 
   async getRecentActivities(userId, limit = 5) {
     const groups = await Group.find({
-      members: userId,
+      "members.user": userId,
     }).select("_id");
 
     const groupIds = groups.map((group) => group._id);
@@ -41,10 +41,7 @@ class DashboardRepository {
 
   async getPendingBalances(userId) {
     return Balance.find({
-      $or: [
-        { lender: userId },
-        { borrower: userId },
-      ],
+      $or: [{ lender: userId }, { borrower: userId }],
       amount: {
         $gt: 0,
       },
@@ -58,7 +55,7 @@ class DashboardRepository {
     const [totalGroups, totalExpenses, totalSpent, balances] =
       await Promise.all([
         Group.countDocuments({
-          members: userId,
+          "members.user": userId,
         }),
 
         Expense.countDocuments({
@@ -82,10 +79,7 @@ class DashboardRepository {
         ]),
 
         Balance.find({
-          $or: [
-            { lender: userId },
-            { borrower: userId },
-          ],
+          $or: [{ lender: userId }, { borrower: userId }],
         }),
       ]);
 
