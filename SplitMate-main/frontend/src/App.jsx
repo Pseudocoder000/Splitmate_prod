@@ -1,5 +1,6 @@
 import { cloneElement, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import DashboardPage from './pages/DashboardPage';
@@ -126,12 +127,13 @@ function AppShell({ children }) {
 function App() {
   return (
     <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/dashboard" element={<ProtectedRoute><AppShell><DashboardPage /></AppShell></ProtectedRoute>} />
       <Route path="/groups" element={<ProtectedRoute><AppShell><GroupsPage /></AppShell></ProtectedRoute>} />
       <Route path="/activity" element={<ProtectedRoute><AppShell><ActivityPage /></AppShell></ProtectedRoute>} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

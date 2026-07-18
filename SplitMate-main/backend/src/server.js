@@ -1,21 +1,26 @@
 const dns = require('dns');
-dns.setServers(['8.8.8.8', '8.8.4.4']);
+
+const dnsServers = (process.env.DNS_SERVERS || '8.8.8.8,1.1.1.1')
+  .split(',')
+  .map((server) => server.trim())
+  .filter(Boolean);
+
+if (dnsServers.length > 0) {
+  dns.setServers(dnsServers);
+  console.log(`DNS servers configured: ${dnsServers.join(', ')}`);
+}
 
 const mongoose = require("mongoose");
-const { MongoMemoryServer } = require("mongodb-memory-server");
-const { port, mongoUri, nodeEnv } = require("./config/env");
+const { port, mongoUri } = require("./config/env");
 const app = require("./app");
 
 const listenPort = Number(port);
-
-let memoryServer;
 
 const connectToDatabase = async () => {
   try {
     await mongoose.connect(mongoUri);
     console.log("MongoDB Atlas Connected");
   } catch (error) {
-    // console.error("MongoDB Connection Failed:", error.message);
     console.error("MongoDB Connection Failed:");
     console.error(error);
     process.exit(1);
