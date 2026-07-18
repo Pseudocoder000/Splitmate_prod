@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useDispatch } from 'react-redux';
 import { login } from '../store/slices/authSlice';
+import { fetchDashboard } from '../store/slices/dashboardSlice'
 
 function SignupPage() {
     const [name, setName] = useState('');

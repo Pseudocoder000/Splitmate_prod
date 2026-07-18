@@ -1,303 +1,349 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchDashboard } from '../store/slices/dashboardSlice'
+import { fetchDashboard } from '../store/slices/dashboardSlice';
+import api from '../api/client';
 
 function formatCurrency(amount = 0) {
-  return `₹${Number(amount).toLocaleString('en-IN')}`;
+    return `₹${Number(amount).toLocaleString('en-IN')}`;
 }
 
 function formatRelativeTime(dateString) {
-  if (!dateString) return '';
-  const diffMs = Date.now() - new Date(dateString).getTime();
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+    if (!dateString) return '';
+    const diffMs = Date.now() - new Date(dateString).getTime();
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
 }
 
 function DashboardPage({ theme }) {
-  const dispatch = useDispatch();
-  const navigate = useNavigate();
+    const dispatch = useDispatch();
+    const navigate = useNavigate();
 
-  const user = useSelector((state) => state.auth?.user);
-  const {
-    loading,
-    error,
-    summary,
-    groups,
-    recentExpenses,
-    recentActivities,
-    pendingBalances,
-  } = useSelector((state) => state.dashboard);
+    const user = useSelector((state) => state.auth?.user);
+    const { loading, error, summary, groups, recentExpenses, recentActivities, pendingBalances } =
+        useSelector((state) => state.dashboard);
 
-  useEffect(() => {
-    if (!user) {
-      navigate('/login');
-      return;
+    useEffect(() => {
+        if (!user) {
+            navigate('/login');
+            return;
+        }
+
+        dispatch(fetchDashboard());
+    }, [dispatch, navigate, user]);
+
+    if (!user || (loading && !summary?.totalExpenses)) {
+        return (
+            <div className='flex min-h-screen items-center justify-center bg-slate-950 text-slate-300'>
+                Loading dashboard…
+            </div>
+        );
     }
 
-    dispatch(fetchDashboard());
-  }, [dispatch, navigate, user]);
+    if (error) {
+        return (
+            <div className='flex min-h-screen items-center justify-center bg-slate-950 text-rose-400'>
+                {error}
+            </div>
+        );
+    }
 
-  if (!user || (loading && !summary?.totalExpenses)) {
+    const isDark = theme === 'dark';
+    const surface = isDark ? 'border-white/10 bg-slate-900/70' : 'border-slate-200 bg-white/90';
+    const muted = isDark ? 'text-slate-400' : 'text-slate-500';
+    const strong = isDark ? 'text-white' : 'text-slate-900';
+
+    const currentUserId = user?._id || user?.id;
+    const safeGroups = groups || [];
+    const safeExpenses = recentExpenses || [];
+    const safeActivities = recentActivities || [];
+    const safeBalances = pendingBalances || [];
+
+    const groupBalanceById = safeBalances.reduce((acc, b) => {
+        const gid = b.group?._id;
+        if (!gid) return acc;
+        if (b.lender?._id === currentUserId) {
+            acc[gid] = (acc[gid] || 0) + b.amount;
+        } else if (b.borrower?._id === currentUserId) {
+            acc[gid] = (acc[gid] || 0) - b.amount;
+        }
+        return acc;
+    }, {});
+
+    // Most recent activity timestamp per group (activity.group here is a raw
+    // id string, not an object).
+    const groupLastActivityById = safeActivities.reduce((acc, a) => {
+        const gid = a.group;
+        if (!gid) return acc;
+        if (!acc[gid] || new Date(a.createdAt) > new Date(acc[gid])) {
+            acc[gid] = a.createdAt;
+        }
+        return acc;
+    }, {});
+
+    // Lookup so activities (which only carry metadata.expenseId) can show an
+    // amount. Only works when the expense is still in the capped
+    // recentExpenses list — that's a backend limitation, not fixable here.
+    const expenseAmountById = safeExpenses.reduce((acc, exp) => {
+        acc[exp._id] = exp.amount;
+        return acc;
+    }, {});
+
+    // Group id -> name, so activities (raw id string) can display a group name.
+    const groupNameById = safeGroups.reduce((acc, g) => {
+        acc[g._id] = g.name;
+        return acc;
+    }, {});
+
+    const activityFeed = safeActivities.map((item) => {
+        const expenseId = item.metadata?.expenseId;
+        const amount = expenseId ? expenseAmountById[expenseId] : undefined;
+        const groupName =
+            typeof item.group === 'string' ? groupNameById[item.group] : item.group?.name;
+        return { ...item, amount, groupName };
+    });
+
+    
+
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
-        Loading dashboard…
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-rose-400">
-        {error}
-      </div>
-    );
-  }
-
-  const isDark = theme === 'dark';
-  const surface = isDark ? 'border-white/10 bg-slate-900/70' : 'border-slate-200 bg-white/90';
-  const muted = isDark ? 'text-slate-400' : 'text-slate-500';
-  const strong = isDark ? 'text-white' : 'text-slate-900';
-
-  const currentUserId = user?._id || user?.id;
-  const safeGroups = groups || [];
-  const safeExpenses = recentExpenses || [];
-  const safeActivities = recentActivities || [];
-  const safeBalances = pendingBalances || [];
-
-  // --- Derived data (this payload doesn't ship per-group totals/balances,
-  // so we build them from the ledgers that ARE authoritative: pendingBalances
-  // for money, recentActivities for "what happened last") ---
-
-  // Net balance per group, from the current user's point of view.
-  // pendingBalances is the real debt ledger, so this is accurate (unlike
-  // trying to sum recentExpenses, which is a capped, partial list).
-  const groupBalanceById = safeBalances.reduce((acc, b) => {
-    const gid = b.group?._id;
-    if (!gid) return acc;
-    if (b.lender?._id === currentUserId) {
-      acc[gid] = (acc[gid] || 0) + b.amount;
-    } else if (b.borrower?._id === currentUserId) {
-      acc[gid] = (acc[gid] || 0) - b.amount;
-    }
-    return acc;
-  }, {});
-
-  // Most recent activity timestamp per group (activity.group here is a raw
-  // id string, not an object).
-  const groupLastActivityById = safeActivities.reduce((acc, a) => {
-    const gid = a.group;
-    if (!gid) return acc;
-    if (!acc[gid] || new Date(a.createdAt) > new Date(acc[gid])) {
-      acc[gid] = a.createdAt;
-    }
-    return acc;
-  }, {});
-
-  // Lookup so activities (which only carry metadata.expenseId) can show an
-  // amount. Only works when the expense is still in the capped
-  // recentExpenses list — that's a backend limitation, not fixable here.
-  const expenseAmountById = safeExpenses.reduce((acc, exp) => {
-    acc[exp._id] = exp.amount;
-    return acc;
-  }, {});
-
-  // Group id -> name, so activities (raw id string) can display a group name.
-  const groupNameById = safeGroups.reduce((acc, g) => {
-    acc[g._id] = g.name;
-    return acc;
-  }, {});
-
-  const activityFeed = safeActivities.map((item) => {
-    const expenseId = item.metadata?.expenseId;
-    const amount = expenseId ? expenseAmountById[expenseId] : undefined;
-    const groupName = typeof item.group === 'string' ? groupNameById[item.group] : item.group?.name;
-    return { ...item, amount, groupName };
-  });
-
-  return (
-    <div className="space-y-6">
-      <section className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className={`text-sm font-semibold uppercase tracking-[0.28em] ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
-              Dashboard
-            </p>
-            <h1 className={`mt-2 text-2xl font-semibold sm:text-3xl ${strong}`}>
-              Welcome back, {user?.name || 'there'}.
-            </h1>
-            <p className={`mt-2 max-w-2xl text-sm leading-7 ${muted}`}>
-              Keep shared bills, trips, and household costs organized in one calm place.
-            </p>
-          </div>
-          <div className={`rounded-2xl border px-4 py-3 text-sm ${isDark ? 'border-white/10 bg-white/5 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
-            {summary.netBalance >= 0 ? 'Ahead' : 'Behind'} • {summary.totalGroups ?? 0} group{summary.totalGroups === 1 ? '' : 's'} • {safeBalances.length} pending {safeBalances.length === 1 ? 'balance' : 'balances'}
-          </div>
-        </div>
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-[1.6fr_0.9fr]">
-        <section className="space-y-6">
-          <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>Overview</p>
-                <h2 className={`mt-2 text-2xl font-semibold sm:text-3xl ${strong}`}>
-                  {summary.netBalance >= 0 ? (
-                    <>You're owed <span className="text-emerald-500">{formatCurrency(summary.netBalance)}</span></>
-                  ) : (
-                    <>You owe <span className="text-rose-500">{formatCurrency(Math.abs(summary.netBalance))}</span></>
-                  )}
-                </h2>
-                <p className={`mt-2 max-w-xl text-sm leading-7 ${muted}`}>
-                  {summary.netBalance >= 0
-                    ? 'Your balances are healthy and your next split is ready to post.'
-                    : 'Settle up when you get a chance — a few people are waiting on you.'}
-                </p>
-              </div>
-              <button className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">
-                + Add expense
-              </button>
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
-              {[
-                { label: 'Total spent', value: formatCurrency(summary.totalSpent) },
-                { label: 'You owe', value: formatCurrency(summary.youOwe) },
-                { label: 'You’re owed', value: formatCurrency(summary.youAreOwed) },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className={`rounded-2xl border p-4 ${isDark ? 'border-white/10 bg-slate-950/50' : 'border-slate-200 bg-slate-50'}`}
-                >
-                  <p className={`text-sm ${muted}`}>{item.label}</p>
-                  <p className={`mt-2 text-xl font-semibold ${strong}`}>{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>Groups</p>
-                <h3 className={`mt-1 text-xl font-semibold ${strong}`}>Your shared spaces</h3>
-              </div>
-              <button className={`text-sm font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
-                View all
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {safeGroups.length === 0 ? (
-                <div className={`rounded-2xl border px-4 py-6 text-center text-sm ${isDark ? 'border-white/10 bg-white/5 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-                  No groups yet — create one to start splitting expenses.
-                </div>
-              ) : (
-                safeGroups.map((group) => {
-                  const balance = groupBalanceById[group._id] || 0;
-                  const memberCount = group.members?.length ?? 0;
-                  const lastActivityAt = groupLastActivityById[group._id] || group.createdAt;
-                  return (
+        <div className='space-y-6'>
+            <section className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
+                <div className='flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between'>
+                    <div>
+                        <p
+                            className={`text-sm font-semibold uppercase tracking-[0.28em] ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}
+                        >
+                            Dashboard
+                        </p>
+                        <h1 className={`mt-2 text-2xl font-semibold sm:text-3xl ${strong}`}>
+                            Welcome back, {user?.name || 'there'}.
+                        </h1>
+                        <p className={`mt-2 max-w-2xl text-sm leading-7 ${muted}`}>
+                            Keep shared bills, trips, and household costs organized in one calm
+                            place.
+                        </p>
+                    </div>
                     <div
-                      key={group._id}
-                      className={`flex items-center justify-between rounded-2xl border px-4 py-4 ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}
+                        className={`rounded-2xl border px-4 py-3 text-sm ${isDark ? 'border-white/10 bg-white/5 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-700'}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${isDark ? 'bg-white/10' : 'bg-white'} text-xl`}>
-                          👥
-                        </div>
-                        <div>
-                          <p className={`font-semibold ${strong}`}>{group.name}</p>
-                          <p className={`text-sm ${muted}`}>
-                            {memberCount} member{memberCount === 1 ? '' : 's'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-semibold ${balance === 0 ? muted : balance > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                          {balance === 0 ? 'Settled' : `${balance > 0 ? '+' : '-'}${formatCurrency(Math.abs(balance))}`}
-                        </p>
-                        <p className={`text-xs ${muted}`}>
-                          {lastActivityAt ? `Updated ${formatRelativeTime(lastActivityAt)}` : 'No activity yet'}
-                        </p>
-                      </div>
+                        {summary.netBalance >= 0 ? 'Ahead' : 'Behind'} • {summary.totalGroups ?? 0}{' '}
+                        group{summary.totalGroups === 1 ? '' : 's'} • {safeBalances.length} pending{' '}
+                        {safeBalances.length === 1 ? 'balance' : 'balances'}
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </section>
+                </div>
+            </section>
 
-        <aside className="space-y-6">
-          <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
-            <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>Balances</p>
-            <div className="mt-5 space-y-3">
-              {safeBalances.length === 0 ? (
-                <p className={`text-sm ${muted}`}>All settled up — nice work.</p>
-              ) : (
-                safeBalances.map((b) => {
-                  const youAreLender = b.lender?._id === currentUserId;
-                  const otherPerson = youAreLender ? b.borrower : b.lender;
-                  const otherPersonName = otherPerson?.name || 'Unknown';
-                  const widthPct = summary.totalSpent
-                    ? Math.min(100, (b.amount / summary.totalSpent) * 100)
-                    : 0;
-                  return (
-                    <div key={b._id} className="flex items-center gap-3">
-                      <span className={`w-24 shrink-0 truncate text-sm ${muted}`}>{otherPersonName}</span>
-                      <div className={`h-2 flex-1 overflow-hidden rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`}>
-                        <div
-                          className={`h-full rounded-full ${youAreLender ? 'bg-gradient-to-r from-emerald-500 to-cyan-500' : 'bg-gradient-to-r from-rose-500 to-orange-400'}`}
-                          style={{ width: `${widthPct}%` }}
-                        />
-                      </div>
-                      <span className={`shrink-0 text-xs font-medium ${youAreLender ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {youAreLender ? '+' : '-'}{formatCurrency(b.amount)}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+            <div className='grid gap-6 lg:grid-cols-[1.6fr_0.9fr]'>
+                <section className='space-y-6'>
+                    <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
+                        <div className='flex flex-col gap-4 md:flex-row md:items-start md:justify-between'>
+                            <div>
+                                <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>
+                                    Overview
+                                </p>
+                                <h2 className={`mt-2 text-2xl font-semibold sm:text-3xl ${strong}`}>
+                                    {summary.netBalance >= 0 ? (
+                                        <>
+                                            You're owed{' '}
+                                            <span className='text-emerald-500'>
+                                                {formatCurrency(summary.netBalance)}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            You owe{' '}
+                                            <span className='text-rose-500'>
+                                                {formatCurrency(Math.abs(summary.netBalance))}
+                                            </span>
+                                        </>
+                                    )}
+                                </h2>
+                                <p className={`mt-2 max-w-xl text-sm leading-7 ${muted}`}>
+                                    {summary.netBalance >= 0
+                                        ? 'Your balances are healthy and your next split is ready to post.'
+                                        : 'Settle up when you get a chance — a few people are waiting on you.'}
+                                </p>
+                            </div>
+                            <button className='rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400'>
+                                + Add expense
+                            </button>
+                        </div>
 
-          <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
-            <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>Recent activity</p>
-            <div className="mt-5 space-y-3">
-              {activityFeed.length === 0 ? (
-                <p className={`text-sm ${muted}`}>No recent activity yet.</p>
-              ) : (
-                activityFeed.map((item) => (
-                  <div
-                    key={item._id}
-                    className={`rounded-2xl border px-4 py-3 ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className={`truncate text-sm font-medium ${strong}`}>{item.description}</p>
-                      {item.amount != null && (
-                        <span className="shrink-0 text-xs text-emerald-500">{formatCurrency(item.amount)}</span>
-                      )}
+                        <div className='mt-6 grid gap-4 sm:grid-cols-3'>
+                            {[
+                                { label: 'Total spent', value: formatCurrency(summary.totalSpent) },
+                                { label: 'You owe', value: formatCurrency(summary.youOwe) },
+                                { label: 'You’re owed', value: formatCurrency(summary.youAreOwed) },
+                            ].map((item) => (
+                                <div
+                                    key={item.label}
+                                    className={`rounded-2xl border p-4 ${isDark ? 'border-white/10 bg-slate-950/50' : 'border-slate-200 bg-slate-50'}`}
+                                >
+                                    <p className={`text-sm ${muted}`}>{item.label}</p>
+                                    <p className={`mt-2 text-xl font-semibold ${strong}`}>
+                                        {item.value}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                    <p className={`mt-1 text-sm ${muted}`}>
-                      {item.groupName ? `${item.groupName} • ` : ''}
-                      {formatRelativeTime(item.createdAt)}
-                    </p>
-                  </div>
-                ))
-              )}
+
+                    <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
+                        <div className='flex items-center justify-between'>
+                            <div>
+                                <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>
+                                    Groups
+                                </p>
+                                <h3 className={`mt-1 text-xl font-semibold ${strong}`}>
+                                    Your shared spaces
+                                </h3>
+                            </div>
+                            <button
+                                className={`text-sm font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}
+                            >
+                                View all
+                            </button>
+                        </div>
+
+                        <div className='mt-5 space-y-3'>
+                            {safeGroups.length === 0 ? (
+                                <div
+                                    className={`rounded-2xl border px-4 py-6 text-center text-sm ${isDark ? 'border-white/10 bg-white/5 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
+                                >
+                                    No groups yet — create one to start splitting expenses.
+                                </div>
+                            ) : (
+                                safeGroups.map((group) => {
+                                    const balance = groupBalanceById[group._id] || 0;
+                                    const memberCount = group.members?.length ?? 0;
+                                    const lastActivityAt =
+                                        groupLastActivityById[group._id] || group.createdAt;
+                                    return (
+                                        <div
+                                            key={group._id}
+                                            className={`flex items-center justify-between rounded-2xl border px-4 py-4 ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}
+                                        >
+                                            <div className='flex items-center gap-3'>
+                                                <div
+                                                    className={`flex h-11 w-11 items-center justify-center rounded-2xl ${isDark ? 'bg-white/10' : 'bg-white'} text-xl`}
+                                                >
+                                                    👥
+                                                </div>
+                                                <div>
+                                                    <p className={`font-semibold ${strong}`}>
+                                                        {group.name}
+                                                    </p>
+                                                    <p className={`text-sm ${muted}`}>
+                                                        {memberCount} member
+                                                        {memberCount === 1 ? '' : 's'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className='text-right'>
+                                                <p
+                                                    className={`text-sm font-semibold ${balance === 0 ? muted : balance > 0 ? 'text-emerald-500' : 'text-rose-500'}`}
+                                                >
+                                                    {balance === 0
+                                                        ? 'Settled'
+                                                        : `${balance > 0 ? '+' : '-'}${formatCurrency(Math.abs(balance))}`}
+                                                </p>
+                                                <p className={`text-xs ${muted}`}>
+                                                    {lastActivityAt
+                                                        ? `Updated ${formatRelativeTime(lastActivityAt)}`
+                                                        : 'No activity yet'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                </section>
+
+                <aside className='space-y-6'>
+                    <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
+                        <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>Balances</p>
+                        <div className='mt-5 space-y-3'>
+                            {safeBalances.length === 0 ? (
+                                <p className={`text-sm ${muted}`}>All settled up — nice work.</p>
+                            ) : (
+                                safeBalances.map((b) => {
+                                    const youAreLender = b.lender?._id === currentUserId;
+                                    const otherPerson = youAreLender ? b.borrower : b.lender;
+                                    const otherPersonName = otherPerson?.name || 'Unknown';
+                                    const widthPct = summary.totalSpent
+                                        ? Math.min(100, (b.amount / summary.totalSpent) * 100)
+                                        : 0;
+                                    return (
+                                        <div key={b._id} className='flex items-center gap-3'>
+                                            <span
+                                                className={`w-24 shrink-0 truncate text-sm ${muted}`}
+                                            >
+                                                {otherPersonName}
+                                            </span>
+                                            <div
+                                                className={`h-2 flex-1 overflow-hidden rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`}
+                                            >
+                                                <div
+                                                    className={`h-full rounded-full ${youAreLender ? 'bg-gradient-to-r from-emerald-500 to-cyan-500' : 'bg-gradient-to-r from-rose-500 to-orange-400'}`}
+                                                    style={{ width: `${widthPct}%` }}
+                                                />
+                                            </div>
+                                            <span
+                                                className={`shrink-0 text-xs font-medium ${youAreLender ? 'text-emerald-500' : 'text-rose-500'}`}
+                                            >
+                                                {youAreLender ? '+' : '-'}
+                                                {formatCurrency(b.amount)}
+                                            </span>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+
+                    <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
+                        <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>
+                            Recent activity
+                        </p>
+                        <div className='mt-5 space-y-3'>
+                            {activityFeed.length === 0 ? (
+                                <p className={`text-sm ${muted}`}>No recent activity yet.</p>
+                            ) : (
+                                activityFeed.map((item) => (
+                                    <div
+                                        key={item._id}
+                                        className={`rounded-2xl border px-4 py-3 ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}
+                                    >
+                                        <div className='flex items-center justify-between gap-3'>
+                                            <p className={`truncate text-sm font-medium ${strong}`}>
+                                                {item.description}
+                                            </p>
+                                            {item.amount != null && (
+                                                <span className='shrink-0 text-xs text-emerald-500'>
+                                                    {formatCurrency(item.amount)}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className={`mt-1 text-sm ${muted}`}>
+                                            {item.groupName ? `${item.groupName} • ` : ''}
+                                            {formatRelativeTime(item.createdAt)}
+                                        </p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </aside>
             </div>
-          </div>
-        </aside>
-      </div>
-    </div>
-  );
+        </div>
+    );
 }
 
 export default DashboardPage;
