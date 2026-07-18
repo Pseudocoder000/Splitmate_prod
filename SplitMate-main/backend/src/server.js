@@ -1,4 +1,5 @@
 const dns = require('dns');
+const http = require('http');
 
 const dnsServers = (process.env.DNS_SERVERS || '8.8.8.8,1.1.1.1')
   .split(',')
@@ -12,8 +13,11 @@ if (dnsServers.length > 0) {
 const mongoose = require("mongoose");
 const { port, mongoUri } = require("./config/env");
 const app = require("./app");
+const { initSocket } = require("./sockets/socket");
 
 const listenPort = Number(port);
+const server = http.createServer(app);
+initSocket(server);
 
 const connectToDatabase = async () => {
   try {
@@ -27,7 +31,9 @@ const connectToDatabase = async () => {
 
 connectToDatabase()
   .then(() => {
-    app.listen(listenPort);
+    server.listen(listenPort, () => {
+      console.log(`SplitMate backend listening on port ${listenPort}`);
+    });
   })
   .catch((error) => {
     console.error("Failed to start the server:", error.message);

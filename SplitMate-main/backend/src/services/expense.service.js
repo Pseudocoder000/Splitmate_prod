@@ -1,5 +1,3 @@
-const mongoose = require("mongoose");
-
 const expenseRepository = require("../repositories/expense.repository");
 const groupRepository = require("../repositories/group.repository");
 
@@ -9,6 +7,7 @@ const activityService = require("./activity.service");
 const ACTIVITY = require("../constants/activityType");
 
 const { AppError } = require("../utils/errors");
+const { emitGroupUpdate } = require("../sockets/socketHandlers");
 
 class ExpenseService {
   async createExpense(data, userId) {
@@ -97,54 +96,33 @@ class ExpenseService {
         throw new AppError("Invalid split type.", 400, "INVALID_SPLIT_TYPE");
     }
 
-    const session = await mongoose.startSession();
+    const expense = await expenseRepository.create({
+      group: data.groupId,
+      title: data.title,
+      description: data.description,
+      amount: data.amount,
+      expenseType: data.expenseType,
+      paidBy: data.paidBy,
+      splitType: data.splitType,
+      splits,
+      createdBy: userId,
+    });
 
-    try {
-      session.startTransaction();
+    await balanceUpdater.addExpense(expense);
 
-      const expense = await expenseRepository.create(
-        {
-          group: data.groupId,
-          title: data.title,
-          description: data.description,
-          amount: data.amount,
-          expenseType: data.expenseType,
-          paidBy: data.paidBy,
-          splitType: data.splitType,
-          splits,
-          createdBy: userId,
-        },
-        session,
-      );
+    await activityService.logActivity({
+      group: expense.group,
+      performedBy: userId,
+      type: ACTIVITY.EXPENSE_CREATED,
+      description: `Created expense "${expense.title}"`,
+      metadata: {
+        expenseId: expense._id,
+      },
+    });
 
-      await balanceUpdater.addExpense(expense, session);
+    emitGroupUpdate(expense.group);
 
-      await activityService.logActivity({
-        group: expense.group,
-
-        performedBy: userId,
-
-        type: ACTIVITY.EXPENSE_CREATED,
-
-        description: `Created expense "${expense.title}"`,
-
-        metadata: {
-          expenseId: expense._id,
-        },
-
-        session,
-      });
-
-      await session.commitTransaction();
-
-      return expense;
-    } catch (error) {
-      await session.abortTransaction();
-
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    return expense;
   }
 
   getExpense(id) {
@@ -162,14 +140,9 @@ class ExpenseService {
       throw new AppError("Expense not found.", 404, "EXPENSE_NOT_FOUND");
     }
 
-    const session = await mongoose.startSession();
+    await balanceUpdater.removeExpense(oldExpense);
 
-    try {
-      session.startTransaction();
-
-      await balanceUpdater.removeExpense(oldExpense, session);
-
-      let splits = [];
+    let splits = [];
 
       switch (data.splitType) {
         case "EQUAL": {
@@ -232,48 +205,31 @@ class ExpenseService {
           throw new AppError("Invalid split type.", 400, "INVALID_SPLIT_TYPE");
       }
 
-      const updatedExpense = await expenseRepository.update(
-        id,
-        {
-          title: data.title,
-          description: data.description,
-          amount: data.amount,
-          expenseType: data.expenseType,
-          paidBy: data.paidBy,
-          splitType: data.splitType,
-          splits,
-        },
-        session,
-      );
+    const updatedExpense = await expenseRepository.update(id, {
+      title: data.title,
+      description: data.description,
+      amount: data.amount,
+      expenseType: data.expenseType,
+      paidBy: data.paidBy,
+      splitType: data.splitType,
+      splits,
+    });
 
-      await balanceUpdater.addExpense(updatedExpense, session);
+    await balanceUpdater.addExpense(updatedExpense);
 
-      await activityService.logActivity({
-        group: updatedExpense.group,
+    await activityService.logActivity({
+      group: updatedExpense.group,
+      performedBy: updatedExpense.paidBy._id || updatedExpense.paidBy,
+      type: ACTIVITY.EXPENSE_UPDATED,
+      description: `Updated expense "${updatedExpense.title}"`,
+      metadata: {
+        expenseId: updatedExpense._id,
+      },
+    });
 
-        performedBy: updatedExpense.paidBy._id || updatedExpense.paidBy,
+    emitGroupUpdate(updatedExpense.group);
 
-        type: ACTIVITY.EXPENSE_UPDATED,
-
-        description: `Updated expense "${updatedExpense.title}"`,
-
-        metadata: {
-          expenseId: updatedExpense._id,
-        },
-
-        session,
-      });
-
-      await session.commitTransaction();
-
-      return updatedExpense;
-    } catch (err) {
-      await session.abortTransaction();
-
-      throw err;
-    } finally {
-      session.endSession();
-    }
+    return updatedExpense;
   }
 
   async deleteExpense(id) {
@@ -283,43 +239,25 @@ class ExpenseService {
       throw new AppError("Expense not found.", 404, "EXPENSE_NOT_FOUND");
     }
 
-    const session = await mongoose.startSession();
+    await balanceUpdater.removeExpense(expense);
 
-    try {
-      session.startTransaction();
+    await expenseRepository.delete(id);
 
-      await balanceUpdater.removeExpense(expense, session);
+    await activityService.logActivity({
+      group: expense.group,
+      performedBy: expense.paidBy._id || expense.paidBy,
+      type: ACTIVITY.EXPENSE_DELETED,
+      description: `Deleted expense "${expense.title}"`,
+      metadata: {
+        expenseId: expense._id,
+      },
+    });
 
-      await expenseRepository.delete(id, session);
+    emitGroupUpdate(expense.group);
 
-      await activityService.logActivity({
-        group: expense.group,
-
-        performedBy: expense.paidBy._id || expense.paidBy,
-
-        type: ACTIVITY.EXPENSE_DELETED,
-
-        description: `Deleted expense "${expense.title}"`,
-
-        metadata: {
-          expenseId: expense._id,
-        },
-
-        session,
-      });
-
-      await session.commitTransaction();
-
-      return {
-        message: "Expense deleted successfully.",
-      };
-    } catch (err) {
-      await session.abortTransaction();
-
-      throw err;
-    } finally {
-      session.endSession();
-    }
+    return {
+      message: "Expense deleted successfully.",
+    };
   }
 }
 

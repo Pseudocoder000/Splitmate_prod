@@ -6,19 +6,40 @@ const ACTIVITY = require("../constants/activityType");
 const { AppError } = require("../utils/errors");
 const ERROR_CODES = require("../constants/errorCodes");
 const { OWNER, MEMBER } = require("../constants/roles");
+const { emitGroupUpdate } = require("../sockets/socketHandlers");
 
 class GroupService {
   async createGroup(userId, body) {
+    const memberEmails = Array.isArray(body.members) ? body.members : [];
+    const members = [
+      {
+        user: userId,
+        role: OWNER,
+        joinedAt: new Date(),
+      },
+    ];
+
+    for (const member of memberEmails) {
+      const email = member?.email?.trim();
+      if (!email) continue;
+
+      const existingUser = await userRepository.findByEmail(email);
+      if (!existingUser) continue;
+
+      const alreadyAdded = members.some((entry) => entry.user.toString() === existingUser._id.toString());
+      if (alreadyAdded) continue;
+
+      members.push({
+        user: existingUser._id,
+        role: MEMBER,
+        joinedAt: new Date(),
+      });
+    }
+
     const group = await groupRepository.create({
       name: body.name,
       owner: userId,
-      members: [
-        {
-          user: userId,
-          role: OWNER,
-          joinedAt: new Date(),
-        },
-      ],
+      members,
     });
 
     await activityService.logActivity({
@@ -27,6 +48,8 @@ class GroupService {
       type: ACTIVITY.GROUP_CREATED,
       description: `Group "${group.name}" was created.`,
     });
+
+    emitGroupUpdate(group._id);
 
     return await groupRepository.findById(group._id);
   }
@@ -104,6 +127,8 @@ class GroupService {
       type: ACTIVITY.MEMBER_ADDED,
       description: `${user.name} was added to the group.`,
     });
+
+    emitGroupUpdate(group._id);
 
     return await groupRepository.findById(group._id);
   }

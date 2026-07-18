@@ -1,7 +1,16 @@
 const Settlement = require("../models/Settlement");
 
-const create = (payload) =>
-  Settlement.create(payload);
+const create = async (payload, session = null) => {
+  const settlement = new Settlement(payload);
+
+  if (session) {
+    await settlement.save({ session });
+    return settlement;
+  }
+
+  await settlement.save();
+  return settlement;
+};
 
 const findByGroup = (groupId) =>
   Settlement.find({ group: groupId })
