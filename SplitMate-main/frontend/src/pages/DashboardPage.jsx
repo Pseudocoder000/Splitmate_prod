@@ -65,7 +65,60 @@ function DashboardPage({ theme }) {
   const strong = isDark ? 'text-white' : 'text-slate-900';
 
   const currentUserId = user?._id || user?.id;
-  const activityFeed = (recentActivities?.length > 0 ? recentActivities : recentExpenses) || [];
+  const safeGroups = groups || [];
+  const safeExpenses = recentExpenses || [];
+  const safeActivities = recentActivities || [];
+  const safeBalances = pendingBalances || [];
+
+  // --- Derived data (this payload doesn't ship per-group totals/balances,
+  // so we build them from the ledgers that ARE authoritative: pendingBalances
+  // for money, recentActivities for "what happened last") ---
+
+  // Net balance per group, from the current user's point of view.
+  // pendingBalances is the real debt ledger, so this is accurate (unlike
+  // trying to sum recentExpenses, which is a capped, partial list).
+  const groupBalanceById = safeBalances.reduce((acc, b) => {
+    const gid = b.group?._id;
+    if (!gid) return acc;
+    if (b.lender?._id === currentUserId) {
+      acc[gid] = (acc[gid] || 0) + b.amount;
+    } else if (b.borrower?._id === currentUserId) {
+      acc[gid] = (acc[gid] || 0) - b.amount;
+    }
+    return acc;
+  }, {});
+
+  // Most recent activity timestamp per group (activity.group here is a raw
+  // id string, not an object).
+  const groupLastActivityById = safeActivities.reduce((acc, a) => {
+    const gid = a.group;
+    if (!gid) return acc;
+    if (!acc[gid] || new Date(a.createdAt) > new Date(acc[gid])) {
+      acc[gid] = a.createdAt;
+    }
+    return acc;
+  }, {});
+
+  // Lookup so activities (which only carry metadata.expenseId) can show an
+  // amount. Only works when the expense is still in the capped
+  // recentExpenses list — that's a backend limitation, not fixable here.
+  const expenseAmountById = safeExpenses.reduce((acc, exp) => {
+    acc[exp._id] = exp.amount;
+    return acc;
+  }, {});
+
+  // Group id -> name, so activities (raw id string) can display a group name.
+  const groupNameById = safeGroups.reduce((acc, g) => {
+    acc[g._id] = g.name;
+    return acc;
+  }, {});
+
+  const activityFeed = safeActivities.map((item) => {
+    const expenseId = item.metadata?.expenseId;
+    const amount = expenseId ? expenseAmountById[expenseId] : undefined;
+    const groupName = typeof item.group === 'string' ? groupNameById[item.group] : item.group?.name;
+    return { ...item, amount, groupName };
+  });
 
   return (
     <div className="space-y-6">
@@ -83,7 +136,7 @@ function DashboardPage({ theme }) {
             </p>
           </div>
           <div className={`rounded-2xl border px-4 py-3 text-sm ${isDark ? 'border-white/10 bg-white/5 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
-            {summary.netBalance >= 0 ? 'Ahead' : 'Behind'} • {summary.totalGroups ?? 0} group{summary.totalGroups === 1 ? '' : 's'} • {pendingBalances.length} pending {pendingBalances.length === 1 ? 'balance' : 'balances'}
+            {summary.netBalance >= 0 ? 'Ahead' : 'Behind'} • {summary.totalGroups ?? 0} group{summary.totalGroups === 1 ? '' : 's'} • {safeBalances.length} pending {safeBalances.length === 1 ? 'balance' : 'balances'}
           </div>
         </div>
       </section>
@@ -141,35 +194,42 @@ function DashboardPage({ theme }) {
             </div>
 
             <div className="mt-5 space-y-3">
-              {groups.length === 0 ? (
+              {safeGroups.length === 0 ? (
                 <div className={`rounded-2xl border px-4 py-6 text-center text-sm ${isDark ? 'border-white/10 bg-white/5 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
                   No groups yet — create one to start splitting expenses.
                 </div>
               ) : (
-                groups.map((group) => (
-                  <div
-                    key={group._id}
-                    className={`flex items-center justify-between rounded-2xl border px-4 py-4 ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${isDark ? 'bg-white/10' : 'bg-white'} text-xl`}>
-                        {group.emoji || '👥'}
+                safeGroups.map((group) => {
+                  const balance = groupBalanceById[group._id] || 0;
+                  const memberCount = group.members?.length ?? 0;
+                  const lastActivityAt = groupLastActivityById[group._id] || group.createdAt;
+                  return (
+                    <div
+                      key={group._id}
+                      className={`flex items-center justify-between rounded-2xl border px-4 py-4 ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${isDark ? 'bg-white/10' : 'bg-white'} text-xl`}>
+                          👥
+                        </div>
+                        <div>
+                          <p className={`font-semibold ${strong}`}>{group.name}</p>
+                          <p className={`text-sm ${muted}`}>
+                            {memberCount} member{memberCount === 1 ? '' : 's'}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className={`font-semibold ${strong}`}>{group.name}</p>
-                        <p className={`text-sm ${muted}`}>
-                          {group.category || 'Group'} • {formatCurrency(group.total ?? 0)}
+                      <div className="text-right">
+                        <p className={`text-sm font-semibold ${balance === 0 ? muted : balance > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {balance === 0 ? 'Settled' : `${balance > 0 ? '+' : '-'}${formatCurrency(Math.abs(balance))}`}
+                        </p>
+                        <p className={`text-xs ${muted}`}>
+                          {lastActivityAt ? `Updated ${formatRelativeTime(lastActivityAt)}` : 'No activity yet'}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-semibold ${(group.balance ?? 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {(group.balance ?? 0) >= 0 ? '+' : '-'}{formatCurrency(Math.abs(group.balance ?? 0))}
-                      </p>
-                      <p className={`text-xs ${muted}`}>Updated today</p>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -179,18 +239,19 @@ function DashboardPage({ theme }) {
           <div className={`rounded-[32px] border p-6 shadow-sm ${surface}`}>
             <p className={`text-sm uppercase tracking-[0.28em] ${muted}`}>Balances</p>
             <div className="mt-5 space-y-3">
-              {pendingBalances.length === 0 ? (
+              {safeBalances.length === 0 ? (
                 <p className={`text-sm ${muted}`}>All settled up — nice work.</p>
               ) : (
-                pendingBalances.map((b) => {
-                  const youAreLender = b.lender._id === currentUserId;
+                safeBalances.map((b) => {
+                  const youAreLender = b.lender?._id === currentUserId;
                   const otherPerson = youAreLender ? b.borrower : b.lender;
+                  const otherPersonName = otherPerson?.name || 'Unknown';
                   const widthPct = summary.totalSpent
                     ? Math.min(100, (b.amount / summary.totalSpent) * 100)
                     : 0;
                   return (
                     <div key={b._id} className="flex items-center gap-3">
-                      <span className={`w-24 shrink-0 truncate text-sm ${muted}`}>{otherPerson.name}</span>
+                      <span className={`w-24 shrink-0 truncate text-sm ${muted}`}>{otherPersonName}</span>
                       <div className={`h-2 flex-1 overflow-hidden rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`}>
                         <div
                           className={`h-full rounded-full ${youAreLender ? 'bg-gradient-to-r from-emerald-500 to-cyan-500' : 'bg-gradient-to-r from-rose-500 to-orange-400'}`}
@@ -219,11 +280,13 @@ function DashboardPage({ theme }) {
                     className={`rounded-2xl border px-4 py-3 ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <p className={`truncate text-sm font-medium ${strong}`}>{item.title}</p>
-                      <span className="shrink-0 text-xs text-emerald-500">{formatCurrency(item.amount)}</span>
+                      <p className={`truncate text-sm font-medium ${strong}`}>{item.description}</p>
+                      {item.amount != null && (
+                        <span className="shrink-0 text-xs text-emerald-500">{formatCurrency(item.amount)}</span>
+                      )}
                     </div>
                     <p className={`mt-1 text-sm ${muted}`}>
-                      {item.group?.name ? `${item.group.name} • ` : ''}
+                      {item.groupName ? `${item.groupName} • ` : ''}
                       {formatRelativeTime(item.createdAt)}
                     </p>
                   </div>

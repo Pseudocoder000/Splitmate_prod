@@ -36,8 +36,8 @@ function LoginPage() {
 
                     const result = await dispatch(fetchDashboard());
 
-                    console.log('After dashboard');
-                    console.log(result);
+                    // console.log(result);
+                    // console.log(result);
                 } catch (err) {
                     console.error('Dispatch failed:', err);
                 }
