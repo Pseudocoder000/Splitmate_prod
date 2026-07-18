@@ -12,19 +12,14 @@ class ActivityRepository {
     }
 
     findByGroup(groupId, page = 1, limit = 20) {
-
-    console.log("groupId:", groupId);
-    console.log("type:", typeof groupId);
-
-    return Activity.find({
-        group: groupId,
-    })
-        .populate("performedBy", "name email")
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit);
-
-}
+        return Activity.find({
+            group: groupId,
+        })
+            .populate("performedBy", "name email")
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit);
+    }
 
     countByGroup(groupId) {
 

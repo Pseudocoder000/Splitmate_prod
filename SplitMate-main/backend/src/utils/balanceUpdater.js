@@ -25,7 +25,6 @@ class BalanceUpdater {
             return;
         }
 
-        // Existing balance
         const balance = await balanceRepository.find(
             group,
             lender,
@@ -60,7 +59,6 @@ class BalanceUpdater {
 
         }
 
-        // Reverse balance
         const reverseBalance = await balanceRepository.find(
             group,
             borrower,
@@ -112,7 +110,6 @@ class BalanceUpdater {
 
         }
 
-        // No balance exists
         await balanceRepository.create(
             {
                 group,

@@ -118,7 +118,6 @@ class ExpenseService {
       );
 
       await balanceUpdater.addExpense(expense, session);
-      console.log("Added new expense balance");
 
       await activityService.logActivity({
         group: expense.group,
@@ -168,10 +167,7 @@ class ExpenseService {
     try {
       session.startTransaction();
 
-      // Reverse previous balance
       await balanceUpdater.removeExpense(oldExpense, session);
-
-      console.log("Removed old expense balance");
 
       let splits = [];
 
@@ -250,13 +246,7 @@ class ExpenseService {
         session,
       );
 
-      console.log("Updated Expense");
-      console.log(updatedExpense);
-
-      // Apply new balance
       await balanceUpdater.addExpense(updatedExpense, session);
-
-      console.log("Added new expense balance")
 
       await activityService.logActivity({
         group: updatedExpense.group,
@@ -298,7 +288,6 @@ class ExpenseService {
     try {
       session.startTransaction();
 
-      // Reverse balances
       await balanceUpdater.removeExpense(expense, session);
 
       await expenseRepository.delete(id, session);

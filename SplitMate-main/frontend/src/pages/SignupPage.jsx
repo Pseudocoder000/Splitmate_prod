@@ -5,13 +5,19 @@ import { useDispatch } from 'react-redux';
 import { login } from '../store/slices/authSlice';
 import { fetchDashboard } from '../store/slices/dashboardSlice'
 
-function SignupPage() {
+function SignupPage({ theme = 'dark' }) {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const navigate = useNavigate();
     const dispatch = useDispatch();
+    const isDark = theme === 'dark';
+    const shell = isDark ? 'min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100' : 'min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 text-slate-900';
+    const sidePanel = isDark ? 'bg-slate-950/80 text-slate-100' : 'bg-white/80 text-slate-900';
+    const card = isDark ? 'border-slate-200 bg-white text-slate-900' : 'border-slate-200 bg-white text-slate-900';
+    const input = isDark ? 'border-slate-200 bg-white text-black placeholder:text-slate-500' : 'border-slate-300 bg-slate-50 text-slate-900 placeholder:text-slate-500';
+    const muted = isDark ? 'text-slate-300' : 'text-slate-600';
 
     const handleSubmit = async (event) => {
         event.preventDefault();
@@ -41,9 +47,9 @@ function SignupPage() {
     };
 
     return (
-        <div className='min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100'>
+        <div className={shell}>
             <div className='mx-auto flex min-h-screen max-w-7xl flex-col lg:flex-row'>
-                <aside className='flex flex-col justify-between bg-slate-950/80 px-8 py-10 text-slate-100 lg:w-[460px] lg:px-12'>
+                <aside className={`flex flex-col justify-between px-8 py-10 lg:w-[460px] lg:px-12 ${sidePanel}`}>
                     <div>
                         <div className='flex items-center gap-3'>
                             <div className='flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-400 text-lg font-semibold text-slate-950'>
@@ -62,30 +68,30 @@ function SignupPage() {
                             <br />
                             with clarity.
                         </h1>
-                        <p className='mt-4 max-w-md text-base leading-7 text-slate-300'>
+                        <p className={`mt-4 max-w-md text-base leading-7 ${muted}`}> 
                             Create your account and keep trips, rent, and dinner plans tracked
                             without awkward follow-ups.
                         </p>
                     </div>
 
-                    <div className='mt-8 rounded-2xl border border-white/10 bg-white/10 p-4'>
-                        <p className='text-sm font-semibold text-white'>
+                    <div className={`mt-8 rounded-2xl border p-4 ${isDark ? 'border-white/10 bg-white/10' : 'border-slate-200 bg-slate-50'}`}>
+                        <p className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
                             “No more guessing who owes what.”
                         </p>
-                        <p className='mt-1 text-sm text-slate-300'>Alex • Apartment — 14B</p>
+                        <p className={`mt-1 text-sm ${muted}`}>Alex • Apartment — 14B</p>
                     </div>
                 </aside>
 
-                <main className='flex flex-1 items-center justify-center bg-slate-50/95 px-4 py-10 sm:px-6 lg:px-10'>
-                    <div className='w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-8 shadow-2xl'>
+                <main className={`flex flex-1 items-center justify-center px-4 py-10 sm:px-6 lg:px-10 ${isDark ? 'bg-slate-50/95' : 'bg-white/70'}`}>
+                    <div className={`w-full max-w-md rounded-[28px] border p-8 shadow-2xl ${card}`}>
                         <div className='mb-8'>
                             <p className='text-sm font-semibold uppercase tracking-[0.3em] text-emerald-600'>
                                 Create account
                             </p>
-                            <h2 className='mt-2 text-3xl font-semibold text-slate-900'>
+                            <h2 className={`mt-2 text-3xl font-semibold ${isDark ? 'text-slate-900' : 'text-slate-900'}`}>
                                 Join SplitMate
                             </h2>
-                            <p className='mt-2 text-sm text-slate-600'>
+                            <p className={`mt-2 text-sm ${isDark ? 'text-slate-600' : 'text-slate-600'}`}>
                                 Start tracking shared expenses in a few simple steps.
                             </p>
                         </div>
@@ -96,7 +102,7 @@ function SignupPage() {
                                     Your name
                                 </label>
                                 <input
-                                    className='w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-black placeholder:text-slate-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
+                                    className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 ${input}`}
                                     type='text'
                                     value={name}
                                     onChange={(event) => setName(event.target.value)}
@@ -109,7 +115,7 @@ function SignupPage() {
                                     Email
                                 </label>
                                 <input
-                                    className='w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-black placeholder:text-slate-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
+                                    className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 ${input}`}
                                     type='email'
                                     value={email}
                                     onChange={(event) => setEmail(event.target.value)}
@@ -122,7 +128,7 @@ function SignupPage() {
                                     Password
                                 </label>
                                 <input
-                                    className='w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-black placeholder:text-slate-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
+                                    className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 ${input}`}
                                     type='password'
                                     value={password}
                                     onChange={(event) => setPassword(event.target.value)}
@@ -141,7 +147,7 @@ function SignupPage() {
                             </button>
                         </form>
 
-                        <p className='mt-6 text-sm text-slate-600'>
+                        <p className={`mt-6 text-sm ${muted}`}>
                             Already have an account?{' '}
                             <Link
                                 to='/login'

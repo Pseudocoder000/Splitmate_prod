@@ -181,17 +181,6 @@ class GroupService {
       );
     }
 
-    /*
-        TODO
-
-        Expense.deleteMany()
-
-        Settlement.deleteMany()
-
-        Activity.deleteMany()
-
-    */
-
     await groupRepository.deleteGroup(groupId);
 
     await activityService.logActivity({

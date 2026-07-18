@@ -34,7 +34,6 @@ const balanceSchema = new mongoose.Schema(
     }
 );
 
-// One balance per lender-borrower pair within a group
 balanceSchema.index(
     {
         group: 1,

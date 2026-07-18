@@ -13,9 +13,5 @@ router.get(
     balanceController.getGroupBalances
 );
 
-// router.get(
-//     "/groups/:groupId/settlements",
-//     balanceController.getSettlements
-// );
 
 module.exports = router;

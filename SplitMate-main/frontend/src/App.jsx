@@ -49,13 +49,7 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
-function AppShell({ children }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem('splitmate-theme') || 'dark');
-
-  useEffect(() => {
-    localStorage.setItem('splitmate-theme', theme);
-  }, [theme]);
-
+function AppShell({ children, theme, toggleTheme }) {
   const navItems = [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/groups', label: 'Groups' },
@@ -76,7 +70,7 @@ function AppShell({ children }) {
 
             <div className="flex items-center gap-2 lg:hidden">
               <button
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                onClick={toggleTheme}
                 className={theme === 'dark' ? 'rounded-full border border-white/10 bg-white/10 px-3 py-2 text-sm' : 'rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-sm'}
               >
                 {theme === 'dark' ? '☀️' : '🌙'}
@@ -86,7 +80,6 @@ function AppShell({ children }) {
                   try {
                     await api.post('/auth/logout');
                   } catch {
-                    // ignore logout errors and redirect anyway
                   }
                   window.location.href = '/login';
                 }}
@@ -119,7 +112,7 @@ function AppShell({ children }) {
 
           <div className="hidden items-center gap-3 lg:flex">
             <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={toggleTheme}
               className={theme === 'dark' ? 'rounded-full border border-white/10 bg-white/10 px-3 py-2 text-sm' : 'rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-sm'}
             >
               {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
@@ -129,7 +122,6 @@ function AppShell({ children }) {
                 try {
                   await api.post('/auth/logout');
                 } catch {
-                  // ignore logout errors and redirect anyway
                 }
                 window.location.href = '/login';
               }}
@@ -149,14 +141,25 @@ function AppShell({ children }) {
 }
 
 function App() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('splitmate-theme') || 'dark');
+
+  useEffect(() => {
+    localStorage.setItem('splitmate-theme', theme);
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+  };
+
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupPage />} />
-      <Route path="/dashboard" element={<ProtectedRoute><AppShell><DashboardPage /></AppShell></ProtectedRoute>} />
-      <Route path="/groups" element={<ProtectedRoute><AppShell><GroupsPage /></AppShell></ProtectedRoute>} />
-      <Route path="/activity" element={<ProtectedRoute><AppShell><ActivityPage /></AppShell></ProtectedRoute>} />
+      <Route path="/" element={<LandingPage theme={theme} />} />
+      <Route path="/login" element={<LoginPage theme={theme} />} />
+      <Route path="/signup" element={<SignupPage theme={theme} />} />
+      <Route path="/dashboard" element={<ProtectedRoute><AppShell theme={theme} toggleTheme={toggleTheme}><DashboardPage theme={theme} /></AppShell></ProtectedRoute>} />
+      <Route path="/groups" element={<ProtectedRoute><AppShell theme={theme} toggleTheme={toggleTheme}><GroupsPage theme={theme} /></AppShell></ProtectedRoute>} />
+      <Route path="/activity" element={<ProtectedRoute><AppShell theme={theme} toggleTheme={toggleTheme}><ActivityPage theme={theme} /></AppShell></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
