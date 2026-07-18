@@ -4,109 +4,194 @@ const Balance = require("../models/Balance");
 const Activity = require("../models/Activity");
 
 class DashboardRepository {
-  async getUserGroups(userId) {
-    return Group.find({
-      "members.user": userId,
-    })
-      .select("name currency members createdAt")
-      .sort({ createdAt: -1 });
-  }
 
-  async getRecentExpenses(userId, limit = 5) {
-    return Expense.find({
-      paidBy: userId,
-    })
-      .populate("group", "name")
-      .populate("paidBy", "name email")
-      .sort({ createdAt: -1 })
-      .limit(limit);
-  }
+    async getUserGroups(userId) {
 
-  async getRecentActivities(userId, limit = 5) {
-    const groups = await Group.find({
-      "members.user": userId,
-    }).select("_id");
+        return Group.find({
+            "members.user": userId,
+        })
+            .populate("members.user", "name email")
+            .lean();
 
-    const groupIds = groups.map((group) => group._id);
+    }
 
-    return Activity.find({
-      group: {
-        $in: groupIds,
-      },
-    })
-      .populate("performedBy", "name email")
-      .sort({ createdAt: -1 })
-      .limit(limit);
-  }
+    async getGroupExpenseSummary(groupIds) {
 
-  async getPendingBalances(userId) {
-    return Balance.find({
-      $or: [{ lender: userId }, { borrower: userId }],
-      amount: {
-        $gt: 0,
-      },
-    })
-      .populate("lender", "name email")
-      .populate("borrower", "name email")
-      .populate("group", "name");
-  }
+        if (!groupIds.length) {
+            return [];
+        }
 
-  async getDashboardSummary(userId) {
-    const [totalGroups, totalExpenses, totalSpent, balances] =
-      await Promise.all([
-        Group.countDocuments({
-          "members.user": userId,
-        }),
-
-        Expense.countDocuments({
-          paidBy: userId,
-        }),
-
-        Expense.aggregate([
-          {
-            $match: {
-              paidBy: userId,
+        return Expense.aggregate([
+            {
+                $match: {
+                    group: {
+                        $in: groupIds,
+                    },
+                },
             },
-          },
-          {
-            $group: {
-              _id: null,
-              total: {
-                $sum: "$amount",
-              },
+            {
+                $sort: {
+                    createdAt: -1,
+                },
             },
-          },
-        ]),
+            {
+                $group: {
 
-        Balance.find({
-          $or: [{ lender: userId }, { borrower: userId }],
-        }),
-      ]);
+                    _id: "$group",
 
-    let youOwe = 0;
-    let youAreOwed = 0;
+                    expenseCount: {
+                        $sum: 1,
+                    },
 
-    balances.forEach((balance) => {
-      // Logged-in user borrowed money
-      if (balance.borrower.toString() === userId.toString()) {
-        youOwe += balance.amount;
-      }
+                    totalExpense: {
+                        $sum: "$amount",
+                    },
 
-      // Logged-in user lent money
-      if (balance.lender.toString() === userId.toString()) {
-        youAreOwed += balance.amount;
-      }
-    });
+                    lastExpenseTitle: {
+                        $first: "$title",
+                    },
 
-    return {
-      totalGroups,
-      totalExpenses,
-      totalSpent: totalSpent[0]?.total || 0,
-      youOwe,
-      youAreOwed,
-      netBalance: youAreOwed - youOwe,
-    };
-  }
+                    lastExpenseAmount: {
+                        $first: "$amount",
+                    },
+
+                    lastExpenseAt: {
+                        $first: "$createdAt",
+                    },
+
+                },
+            },
+        ]);
+
+    }
+
+    async getGroupBalances(groupIds) {
+
+        if (!groupIds.length) {
+            return [];
+        }
+
+        return Balance.find({
+            group: {
+                $in: groupIds,
+            },
+            amount: {
+                $gt: 0,
+            },
+        })
+            .populate("group", "name")
+            .populate("lender", "name email")
+            .populate("borrower", "name email")
+            .lean();
+
+    }
+
+    async getRecentExpenses(groupIds, limit = 5) {
+
+        if (!groupIds.length) {
+            return [];
+        }
+
+        return Expense.find({
+            group: {
+                $in: groupIds,
+            },
+        })
+            .populate("group", "name")
+            .populate("paidBy", "name email")
+            .sort({
+                createdAt: -1,
+            })
+            .limit(limit)
+            .lean();
+
+    }
+
+    async getRecentActivities(groupIds, limit = 5) {
+
+        if (!groupIds.length) {
+            return [];
+        }
+
+        return Activity.find({
+            group: {
+                $in: groupIds,
+            },
+        })
+            .populate("group", "name")
+            .populate("performedBy", "name email")
+            .sort({
+                createdAt: -1,
+            })
+            .limit(limit)
+            .lean();
+
+    }
+
+    async getSummaryStatistics(userId, groupIds) {
+
+        const [
+            totalGroups,
+            totalExpenses,
+            totalSpent,
+            balances,
+        ] = await Promise.all([
+
+            Group.countDocuments({
+                "members.user": userId,
+            }),
+
+            Expense.countDocuments({
+                group: {
+                    $in: groupIds,
+                },
+            }),
+
+            Expense.aggregate([
+                {
+                    $match: {
+                        group: {
+                            $in: groupIds,
+                        },
+                    },
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total: {
+                            $sum: "$amount",
+                        },
+                    },
+                },
+            ]),
+
+            Balance.find({
+                $or: [
+                    {
+                        lender: userId,
+                    },
+                    {
+                        borrower: userId,
+                    },
+                ],
+            }).lean(),
+
+        ]);
+
+        return {
+
+            totalGroups,
+
+            totalExpenses,
+
+            totalSpent: totalSpent[0]?.total || 0,
+
+            balances,
+
+        };
+
+    }
+
 }
 
 module.exports = new DashboardRepository();
